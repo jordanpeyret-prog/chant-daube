@@ -1,7 +1,6 @@
-<!doctype html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#17324d"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Chant d’aube"><meta name="description" content="Réveil ornithologique et apprentissage des chants d’oiseaux européens."><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><title>Chant d’aube · Réveil ornitho</title><script src="https://cdn.tailwindcss.com"></script><script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><style>html,body,#root{margin:0;min-height:100%;width:100%;background:#101923}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent}</style></head><body><div id="root"></div><script type="text/babel" data-presets="react">const { useEffect, useMemo, useRef, useState } = React;
+<!doctype html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#17324d"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Chant d’aube"><meta name="description" content="Réveil ornithologique et apprentissage des chants d’oiseaux européens."><link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./icon-180.png"><title>Chant d’aube · Réveil ornitho</title><script src="https://cdn.tailwindcss.com"></script><script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><style>html,body,#root{margin:0;min-height:100%;width:100%;background:#101923}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent}input[type=time]{color-scheme:dark}</style></head><body><div id="root"></div><script type="text/babel" data-presets="react">const { useEffect, useMemo, useRef, useState } = React;
 const motion = new Proxy({}, { get: (_, tag) => (props) => React.createElement(tag, props, props.children) });
 const AnimatePresence = ({ children }) => React.createElement(React.Fragment, null, children);
-
 
 /* ================= DATA (liste régionale d'espèces européennes, façon eBird) ================= */
 
@@ -3370,6 +3369,7 @@ function photoOf(s) {
 let AC = null;
 const XC_API = "https://xeno-canto.org/api/2/recordings";
 const XC_CACHE = new Map();
+const XC_READY = new Map();
 
 function audioCtx() {
   if (typeof window === "undefined") return null;
@@ -3429,7 +3429,14 @@ async function xenoCantoRecording(s) {
   })();
 
   XC_CACHE.set(key, promise);
+  promise.then((recording) => {
+    if (recording) XC_READY.set(key, recording);
+  });
   return promise;
+}
+
+function prepareSong(s) {
+  return xenoCantoRecording(s);
 }
 
 function playSyntheticSong(s, volume, loop) {
@@ -3475,23 +3482,29 @@ function playSong(s, volume, loop) {
   let stopped = false;
   let audio = null;
   let fallbackStop = null;
+  const ready = XC_READY.get(s.latin);
 
-  // Retourne immédiatement un stop function : le fetch xeno-canto se fait en parallèle.
-  xenoCantoRecording(s).then((recording) => {
+  const playUrl = (url) => {
     if (stopped) return;
-    if (!recording) {
-      fallbackStop = playSyntheticSong(s, vol, loop);
-      return;
-    }
-
-    audio = new Audio(recording.url);
+    audio = new Audio();
+    audio.preload = "auto";
     audio.volume = Math.max(0, Math.min(1, vol));
     audio.loop = Boolean(loop);
-    audio.preload = "auto";
+    audio.src = url;
+    // Important on iPhone: this path is synchronous when the recording was preloaded.
     audio.play().catch(() => {
       if (!stopped) fallbackStop = playSyntheticSong(s, vol, loop);
     });
-  });
+  };
+
+  if (ready?.url) {
+    playUrl(ready.url);
+  } else {
+    // Always start a local sound synchronously on a tap; the real XC recording is
+    // prepared in advance for subsequent plays.
+    fallbackStop = playSyntheticSong(s, vol, loop);
+    prepareSong(s);
+  }
 
   return () => {
     stopped = true;
@@ -3499,7 +3512,8 @@ function playSong(s, volume, loop) {
     if (audio) {
       audio.pause();
       audio.currentTime = 0;
-      audio.src = "";
+      audio.removeAttribute("src");
+      audio.load();
       audio = null;
     }
   };
@@ -3630,39 +3644,25 @@ function Swallow({ a }) {
 
 function BirdArt({ s, className = "" }) {
   const ph = photoOf(s);
-  const [photoErr, setPhotoErr] = useState(false);
-  if (ph && !photoErr) {
+  if (!ph) {
     return (
-      <div className={"relative overflow-hidden " + className}>
-        <img
-          src={ph.u}
-          alt={s.fr}
-          onError={() => setPhotoErr(true)}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10 pointer-events-none" />
+      <div className={"relative overflow-hidden bg-black/20 " + className}>
+        <div className="absolute inset-0 flex items-center justify-center text-white/40 text-xs">Photo indisponible</div>
       </div>
     );
   }
-  const a = s.art;
-  const plan = a.plan ?? "perch";
-  const sc = a.size ?? 1;
-  const gid = "sky-" + s.id;
   return (
-    <svg viewBox="0 0 120 100" className={className} preserveAspectRatio="xMidYMid slice">
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={s.sky[0]} />
-          <stop offset="1" stopColor={s.sky[1]} />
-        </linearGradient>
-      </defs>
-      <rect width="120" height="100" fill={"url(#" + gid + ")"} />
-      <circle cx="102" cy="16" r="8" fill="#ffffff" opacity="0.12" />
-      <g transform={"translate(" + 60 * (1 - sc) + " " + 88 * (1 - sc) + ") scale(" + sc + ")"}>
-        {plan === "owl" ? <Owl a={a} /> : plan === "woodpecker" ? <Woodpecker a={a} /> : plan === "cuckoo" ? <Cuckoo a={a} /> : plan === "swallow" ? <Swallow a={a} /> : <Perch a={a} />}
-      </g>
-      <rect y="93" width="120" height="7" fill="#000000" opacity="0.18" />
-    </svg>
+    <div className={"relative overflow-hidden bg-black/20 " + className}>
+      <img
+        src={ph.u}
+        alt={s.fr}
+        loading="eager"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        className="absolute inset-0 w-full h-full object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10 pointer-events-none" />
+    </div>
   );
 }
 
@@ -3716,6 +3716,12 @@ function Waves() {
 /* ================= ÉCRAN : RÉVEIL ================= */
 
 function ReveilScreen({ now, alarm, setAlarm, speciesOfWeek, dayOfWeek, settings, stats, onTest, onRecap }) {
+  const [songReady, setSongReady] = useState(false);
+  useEffect(() => {
+    if (!speciesOfWeek) return;
+    setSongReady(false);
+    prepareSong(speciesOfWeek).then(() => setSongReady(true)).catch(() => setSongReady(false));
+  }, [speciesOfWeek?.id]);
   const acc = stats.answered ? Math.round((100 * stats.correct) / stats.answered) : 0;
   const learned = Object.values(stats.perSpecies).filter((e) => e.correct >= 1).length;
   return (
@@ -3748,18 +3754,21 @@ function ReveilScreen({ now, alarm, setAlarm, speciesOfWeek, dayOfWeek, settings
           <Switch on={alarm.on} onChange={(v) => setAlarm({ ...alarm, on: v })} />
         </div>
         {alarm.on && (
-          <div className="flex items-center justify-center gap-6 mt-5">
-            <div className="flex flex-col items-center gap-1">
-              <button onClick={() => setAlarm({ ...alarm, h: (alarm.h + 23) % 24 })} className="text-white/40 hover:text-white text-lg">▲</button>
-              <div className="text-3xl font-bold text-white tabular-nums w-12 text-center">{pad(alarm.h)}</div>
-              <button onClick={() => setAlarm({ ...alarm, h: (alarm.h + 1) % 24 })} className="text-white/40 hover:text-white text-lg">▼</button>
-            </div>
-            <div className="text-3xl font-bold text-white/30 pb-2">:</div>
-            <div className="flex flex-col items-center gap-1">
-              <button onClick={() => setAlarm({ ...alarm, m: (alarm.m + 45) % 60 })} className="text-white/40 hover:text-white text-lg">▲</button>
-              <div className="text-3xl font-bold text-white tabular-nums w-12 text-center">{pad(alarm.m)}</div>
-              <button onClick={() => setAlarm({ ...alarm, m: (alarm.m + 15) % 60 })} className="text-white/40 hover:text-white text-lg">▼</button>
-            </div>
+          <div className="mt-5 flex flex-col items-center gap-2">
+            <label className="text-white/45 text-xs">Heure exacte</label>
+            <input
+              type="time"
+              step="60"
+              value={`${pad(alarm.h)}:${pad(alarm.m)}`}
+              onChange={(e) => {
+                const [h, m] = e.target.value.split(":").map(Number);
+                if (Number.isFinite(h) && Number.isFinite(m)) setAlarm({ ...alarm, h, m });
+              }}
+              className="appearance-none bg-white/10 border border-white/15 rounded-2xl px-5 py-3 text-3xl font-bold text-white tabular-nums text-center outline-none"
+              aria-label="Heure exacte du réveil"
+            />
+            <div className="text-white/35 text-[10px]">Précision à la minute (ex. 06:37)</div>
+            <div className="mt-3 text-center text-[10px] leading-relaxed text-amber-200/60">Sur iPhone, cette PWA ne peut pas garantir un réveil si elle est fermée ou suspendue.</div>
           </div>
         )}
       </div>
@@ -3769,7 +3778,7 @@ function ReveilScreen({ now, alarm, setAlarm, speciesOfWeek, dayOfWeek, settings
           <div className="relative h-36">
             <BirdArt s={speciesOfWeek} className="absolute inset-0 w-full h-full" />
             <div className="absolute bottom-2 left-3 text-[10px] text-white/60 bg-black/30 rounded-full px-2 py-0.5">
-              Espèce de la semaine · photo réelle via Wikimedia Commons · chant synthétisé (Web Audio)
+              Espèce de la semaine · photo réelle via Wikimedia Commons · {songReady ? "chant xeno-canto prêt" : "préparation du chant…"}
             </div>
           </div>
           <div className="p-4">
@@ -3938,11 +3947,8 @@ function QuizScreen({ pool, settings, record, onOpenDetail }) {
   useEffect(() => {
     stopAudio();
     if (q && q.kind === "audio") {
-      stopRef.current = playSong(q.target, settings.volume);
-      setReplaying(true);
-      const dur = (q.target.notes.reduce((acc, n) => acc + n.d + (n.g ?? 0.09), 0) + 0.3) * 1000;
-      const t = setTimeout(() => setReplaying(false), dur);
-      return () => { clearTimeout(t); };
+      setReplaying(false);
+      prepareSong(q.target);
     }
   }, [session ? session.i : null, session ? session.qs : null]);
 
@@ -4199,7 +4205,11 @@ function SpeciesScreen({ pool, settings, onOpenDetail, onRegion, pinned, onPin }
 
 function SpeciesSheet({ s, settings, dayOfWeek, pinned, onPin, onClose }) {
   const [playing, setPlaying] = useState(false);
+  const [xcMeta, setXcMeta] = useState(null);
   const stopRef = useRef(null);
+  useEffect(() => {
+    prepareSong(s).then(setXcMeta).catch(() => setXcMeta(null));
+  }, [s.id]);
   useEffect(() => () => { if (stopRef.current) stopRef.current(); }, []);
   const play = () => {
     if (stopRef.current) stopRef.current();
@@ -4255,6 +4265,9 @@ function SpeciesSheet({ s, settings, dayOfWeek, pinned, onPin, onClose }) {
             <div className="text-orange-300 text-[11px] font-bold uppercase tracking-wider">🎧 Le chant</div>
             <div className="text-white/80 text-xs leading-relaxed">{s.song}</div>
             <div className="text-white/60 text-xs leading-relaxed pt-1">💡 {s.mnemonic}</div>
+            {xcMeta && (
+              <a href={xcMeta.page} target="_blank" rel="noreferrer" className="block text-white/45 text-[10px] pt-2 underline underline-offset-2">🎧 xeno-canto {xcMeta.id} · {xcMeta.recordist} · {xcMeta.license}</a>
+            )}
           </div>
 
           <div className="bg-white/5 rounded-2xl p-4">
@@ -4524,12 +4537,12 @@ function SettingsScreen({ settings, setSettings, speciesOfWeek, pool }) {
 
 /* ================= APP ================= */
 
-function App() {
+export default function App() {
   const [tab, setTab] = useState("reveil");
   const [now, setNow] = useState(new Date());
   const [settings, setSettings] = useState(() => load("ca-settings", { region: "ALL", choices: 4, volume: 0.6, fade: true, pinned: null }));
   const [stats, setStats] = useState(() => load("ca-stats", { streak: 0, best: 0, correct: 0, answered: 0, perSpecies: {} }));
-  const [alarm, setAlarm] = useState({ on: true, h: 7, m: 0 });
+  const [alarm, setAlarm] = useState(() => load("ca-alarm", { on: true, h: 7, m: 0, lastTriggered: null }));
   const [ringing, setRinging] = useState(null);
   const [detail, setDetail] = useState(null);
   const [recap, setRecap] = useState(false);
@@ -4537,6 +4550,17 @@ function App() {
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => { save("ca-settings", settings); }, [settings]);
   useEffect(() => { save("ca-stats", stats); }, [stats]);
+  useEffect(() => { save("ca-alarm", alarm); }, [alarm]);
+
+  // In-app fallback only: JavaScript timers are suspended by iOS when the PWA is backgrounded.
+  useEffect(() => {
+    if (!alarm.on) return;
+    const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()} ${alarm.h}:${alarm.m}`;
+    if (now.getHours() === alarm.h && now.getMinutes() === alarm.m && alarm.lastTriggered !== key) {
+      setAlarm((a) => ({ ...a, lastTriggered: key }));
+      startRinging();
+    }
+  }, [now.getHours(), now.getMinutes(), alarm.on, alarm.h, alarm.m, alarm.lastTriggered]);
 
   const pool = useMemo(
     () => SPECIES.filter((s) => settings.region === "ALL" || s.countries.includes(settings.region)),
@@ -4653,5 +4677,8 @@ function App() {
     </div>
   );
 }
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
-</script><script>if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(console.warn));</script></body></html>
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.warn));
+}
+</script></body></html>

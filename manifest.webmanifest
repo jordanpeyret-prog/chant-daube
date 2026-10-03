@@ -1,0 +1,16 @@
+{
+  "name": "Chant d’aube · Réveil ornitho",
+  "short_name": "Chant d’aube",
+  "description": "Réveil ornithologique et apprentissage des chants d’oiseaux européens.",
+  "lang": "fr-FR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101923",
+  "theme_color": "#17324d",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
